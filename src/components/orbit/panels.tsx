@@ -5,10 +5,12 @@ import { roomLabel } from "@/lib/rooms";
 import { useMeeting } from "@/lib/meeting-store";
 import { Button } from "@/components/ui/button";
 import { TranslatorPanel, DonatePanel, TranslatorAudioVisualizer } from "@/components/orbit/utility-panels";
+import { CalendarPanel } from "@/components/orbit/calendar-panel";
 
 const SHORTCUTS = [
   ["M", "Mute or unmute"],
   ["V", "Camera on or off"],
+  ["K", "Open Google Calendar"],
   ["E", "Open translator"],
   ["C", "Open chat"],
   ["P", "Open participants"],
@@ -47,15 +49,17 @@ export function SidePanel({ now, stream, room }: { now: number; stream?: MediaSt
       ? "Chat"
       : panel === "people"
         ? "Participants"
-        : panel === "translator"
-          ? "Translator"
-          : panel === "donate"
-            ? "Support Orbit"
-            : panel === "settings"
-              ? "Settings"
-              : panel === "shortcuts"
-                ? "Shortcuts"
-                : "Stats";
+        : panel === "calendar"
+          ? "Google Calendar"
+          : panel === "translator"
+            ? "Translator"
+            : panel === "donate"
+              ? "Support Orbit"
+              : panel === "settings"
+                ? "Settings"
+                : panel === "shortcuts"
+                  ? "Shortcuts"
+                  : "Stats";
 
   return (
     <aside className="panel-in absolute inset-0 z-20 flex min-h-0 flex-col bg-elevated sm:static sm:w-96 sm:border-l sm:border-line">
@@ -77,6 +81,7 @@ export function SidePanel({ now, stream, room }: { now: number; stream?: MediaSt
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {panel === "chat" && <ChatPanel />}
         {panel === "people" && <PeoplePanel />}
+        {panel === "calendar" && <CalendarPanel currentRoom={room} />}
         {panel === "translator" && <TranslatorPanel active={panel === "translator"} incomingStream={stream ?? null} />}
         {panel === "donate" && <DonatePanel returnPath={room ? `/meet/${room}` : "/"} />}
         {panel === "settings" && <SettingsPanel />}

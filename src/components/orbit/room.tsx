@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import * as Popover from "@radix-ui/react-popover";
 import {
+  Calendar,
   ChartNoAxesColumn,
   Ellipsis,
   Hand,
@@ -141,6 +142,7 @@ export function Room({ room, media }: { room: string; media: LocalMedia }) {
       const map: Record<string, () => void> = {
         m: toggleAudio,
         v: toggleVideo,
+        k: () => togglePanel("calendar"),
         e: () => togglePanel("translator"),
         c: () => togglePanel("chat"),
         p: () => togglePanel("people"),
@@ -307,6 +309,14 @@ export function Room({ room, media }: { room: string; media: LocalMedia }) {
           </Popover.Root>
 
           <ToolButton
+            label="Google Calendar"
+            pressed={panel === "calendar"}
+            onClick={() => togglePanel("calendar")}
+          >
+            <Calendar className="size-5" />
+          </ToolButton>
+
+          <ToolButton
             label={translatorRunning ? "Stop Translator" : "Start Translator"}
             pressed={panel === "translator" || translatorRunning}
             onClick={() => togglePanel("translator")}
@@ -351,6 +361,7 @@ export function Room({ room, media }: { room: string; media: LocalMedia }) {
                   label={translatorRunning ? "Stop Translator" : "Start Translator"}
                   onClick={() => togglePanel("translator")}
                 />
+                <MenuItem icon={Calendar} label="Google Calendar" onClick={() => togglePanel("calendar")} />
                 <MenuItem icon={Settings} label="Settings" onClick={() => togglePanel("settings")} />
                 <MenuItem icon={Keyboard} label="Shortcuts" onClick={() => togglePanel("shortcuts")} />
                 <MenuItem icon={ChartNoAxesColumn} label="Stats" onClick={() => togglePanel("stats")} />
