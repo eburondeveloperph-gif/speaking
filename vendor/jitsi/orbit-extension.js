@@ -1191,7 +1191,7 @@
     }
 
     expectedSignature = media.signature + "|" + panel.target;
-    if (translation.signature === expectedSignature && (translation.socket || translation.reconnectTimer || translation.status === "connecting")) {
+    if (translation.signature === expectedSignature && (translation.socket || translation.reconnectTimer || translation.status === "connecting" || translation.status === "error")) {
       return;
     }
 

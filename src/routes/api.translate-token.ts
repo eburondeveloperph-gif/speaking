@@ -63,8 +63,9 @@ export const Route = createFileRoute("/api/translate-token")({
           if (error instanceof z.ZodError) {
             return Response.json({ error: "Choose a supported language." }, { status: 400 });
           }
+          console.error("Translate token error:", error);
           return Response.json(
-            { error: "Translation could not start. Please try again." },
+            { error: error instanceof Error ? error.message : "Translation could not start. Please try again." },
             { status: 502 },
           );
         }
