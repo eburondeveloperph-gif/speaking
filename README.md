@@ -13,7 +13,7 @@ Orbit is a modern, privacy-first web video conferencing application featuring re
 
 - **Real-Time Speech-to-Speech Translation**:
   - Full support for **249+ languages** across the global Google Translate catalog.
-  - Bi-directional bidirectional audio streaming over Gemini Multimodal Live WebSockets (`models/gemini-2.0-flash-exp` / `models/gemini-2.5-flash` live service).
+  - Bi-directional bidirectional audio streaming over Gemini Multimodal Live WebSockets (`models/gemini-3.5-live-translate-preview` live service).
   - Audio source routing: Translate your personal microphone, incoming meeting participant audio, or system screen audio.
   - Live transcript feeds with timestamped history, copyable phrases, and voice synthesis toggling.
   - Dynamic audio visualizer synced with live voice output.
