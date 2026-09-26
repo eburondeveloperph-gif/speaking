@@ -1,3 +1,4 @@
+import { getLiveTranslateToken } from "@/lib/gemini-live";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   LiveTranslateClient,
@@ -97,15 +98,7 @@ export function useLiveTranslation({
     async function start() {
       setState((prev) => ({ ...INITIAL_STATE, speakerMuted: prev.speakerMuted, status: "connecting" }));
       try {
-        const response = await fetch("/api/translate-token", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ targetLanguageCode: language }),
-        });
-        const payload = (await response.json()) as { token?: string; model?: string; error?: string };
-        if (!response.ok || !payload.token || !payload.model) {
-          throw new Error(payload.error ?? "Translation could not start.");
-        }
+        const payload = await getLiveTranslateToken({ data: language }) as { token: string; model: string };
         if (cancelled) return;
 
         const client = new LiveTranslateClient({
