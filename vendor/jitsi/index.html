@@ -289,6 +289,7 @@ var config = {
         'camera',
         'desktop',
         'chat',
+        'closedcaptions',
         'raisehand',
         'participants-pane',
         'settings',
@@ -362,11 +363,13 @@ var config = {
 
 
     transcription: {
-        enabled: false,
-        translationEnabled: false,
-        disableClosedCaptions: true,
-        inviteJigasiOnBackendTranscribing: true,
-        renderTranscriptDetails: false    },
+        enabled: true,
+        translationEnabled: true,
+        disableClosedCaptions: false,
+        inviteJigasiOnBackendTranscribing: false,
+        preferredLanguage: 'en-US',
+        renderTranscriptDetails: true
+    },
     recordings: {
         suggestRecording: false,
         showPrejoinWarning: false,
