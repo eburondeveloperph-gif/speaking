@@ -875,7 +875,7 @@
         trackId = mediaTrack.id || "audio";
       }
 
-      // Every remote audio source is valid translator input.
+      // Capture remote participant audio, screen share audio, and local microphone audio.
       if (!track.local) {
         if (addTranslationTrack(result, mediaTrack, "remote:" + String(participantId) + ":" + String(sourceName) + ":" + String(trackId))) {
           result.remoteAudioCount += 1;
@@ -883,13 +883,14 @@
         return;
       }
 
-      // Never translate the local microphone. Only explicit local share/system
-      // audio is admitted here to avoid feeding the listener's own speech back
-      // into Gemini.
       if (isShareSourceType(sourceType) || trackVideoType(track) === "desktop") {
         result.screenShareActive = true;
         if (addTranslationTrack(result, mediaTrack, "local-share:" + String(sourceName) + ":" + String(trackId))) {
           result.shareAudioCount += 1;
+        }
+      } else {
+        if (addTranslationTrack(result, mediaTrack, "local-mic:" + String(trackId))) {
+          result.remoteAudioCount += 1;
         }
       }
     });
@@ -1324,12 +1325,14 @@
         model: model.indexOf("models/") === 0 ? model : "models/" + model,
         generationConfig: {
           responseModalities: ["AUDIO"],
-          inputAudioTranscription: {},
-          outputAudioTranscription: {},
+          mediaResolution: "MEDIA_RESOLUTION_MEDIUM",
+          contextWindowCompression: {
+            triggerTokens: "0",
+            slidingWindow: { targetTokens: "0" }
+          },
           translationConfig: { targetLanguageCode: target, echoTargetLanguage: true }
         },
-        sessionResumption: sessionHandle ? { handle: sessionHandle } : {},
-        contextWindowCompression: { slidingWindow: {} }
+        sessionResumption: sessionHandle ? { handle: sessionHandle } : {}
       };
       socket.send(JSON.stringify({ setup: setup }));
     };
@@ -1531,6 +1534,11 @@
     installMediaCaptureBridge();
     wrapNotify();
     injectPanelSideStyle();
+    window.addEventListener("unhandledrejection", function(event) {
+      if (event && event.reason && String(event.reason.message || event.reason).indexOf("Amplitude") !== -1) {
+        event.preventDefault();
+      }
+    });
     document.addEventListener("click", documentClick, true);
     window.setInterval(poll, POLL_MS);
     window.setTimeout(poll, 250);

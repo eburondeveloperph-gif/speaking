@@ -1,4 +1,4 @@
-import { GoogleGenAI, Modality } from "@google/genai";
+import { GoogleGenAI, MediaResolution, Modality } from "@google/genai";
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { TRANSLATION_LANGUAGE_CODES } from "@/lib/translation-languages";
@@ -38,8 +38,11 @@ export const Route = createFileRoute("/api/translate-token")({
                 model: MODEL,
                 config: {
                   responseModalities: [Modality.AUDIO],
-                  inputAudioTranscription: {},
-                  outputAudioTranscription: {},
+                  mediaResolution: MediaResolution.MEDIA_RESOLUTION_MEDIUM,
+                  contextWindowCompression: {
+                    triggerTokens: "0",
+                    slidingWindow: { targetTokens: "0" },
+                  },
                   translationConfig: {
                     targetLanguageCode: body.targetLanguageCode,
                     // Must match the setup message sent by the browser client
