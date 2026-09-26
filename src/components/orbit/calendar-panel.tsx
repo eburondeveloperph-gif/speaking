@@ -184,6 +184,7 @@ export function CalendarPanel({
     if (accessToken) {
       void fetchCalendarsAndEvents(accessToken, selectedCalendarId);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken, selectedCalendarId]);
 
   const handleCreateEvent = async (e: FormEvent) => {
