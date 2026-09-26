@@ -1,9 +1,6 @@
-import { getLiveTranslateToken } from "@/lib/gemini-live";
+import { GeminiLiveService } from "@/lib/gemini-live";
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  LiveTranslateClient,
-  type TranscriptLine,
-} from "@/lib/translate/live-translate-client";
+import type { TranscriptLine } from "@/lib/translate/live-translate-client";
 
 export type TranslationStatus = "idle" | "connecting" | "listening" | "playing" | "error";
 
@@ -51,7 +48,7 @@ export function useLiveTranslation({
   const [state, setState] = useState<TranslationState>(INITIAL_STATE);
   const [transcripts, setTranscripts] = useState<TranscriptLine[]>([]);
   const [attempt, setAttempt] = useState(0);
-  const clientRef = useRef<LiveTranslateClient | null>(null);
+  const serviceRef = useRef<GeminiLiveService | null>(null);
   const playingTimer = useRef<number | null>(null);
 
   const restart = useCallback(() => {
@@ -59,15 +56,15 @@ export function useLiveTranslation({
       window.clearTimeout(playingTimer.current);
       playingTimer.current = null;
     }
-    void clientRef.current?.stop("idle");
-    clientRef.current = null;
+    void serviceRef.current?.stopSession();
+    serviceRef.current = null;
     setState((prev) => ({ ...INITIAL_STATE, speakerMuted: prev.speakerMuted }));
     setAttempt((value) => value + 1);
   }, []);
 
   const setSpeakerMuted = useCallback((muted: boolean) => {
     setState((prev) => ({ ...prev, speakerMuted: muted }));
-    clientRef.current?.setSpeakerMuted(muted);
+    serviceRef.current?.setSpeakerMuted(muted);
   }, []);
 
   const clearHistory = useCallback(() => {
@@ -98,10 +95,7 @@ export function useLiveTranslation({
     async function start() {
       setState((prev) => ({ ...INITIAL_STATE, speakerMuted: prev.speakerMuted, status: "connecting" }));
       try {
-        const payload = await getLiveTranslateToken({ data: language }) as { token: string; model: string };
-        if (cancelled) return;
-
-        const client = new LiveTranslateClient({
+        const service = new GeminiLiveService({
           onStatus: (status) => {
             if (cancelled) return;
             if (status === "live") {
@@ -138,49 +132,16 @@ export function useLiveTranslation({
           },
         });
 
-        clientRef.current = client;
-        client.setSpeakerMuted(speakerMuted);
+        serviceRef.current = service;
 
-        if (source === "microphone") {
-          // Translate user's microphone speech
-          client.setMicMuted(false);
-          await client.start(
-            {
-              mode: "token",
-              token: payload.token,
-              model: payload.model,
-              targetLanguage: language,
-            },
-            { useMicrophone: true, customStream: stream ?? null },
-          );
-        } else if (source === "screen") {
-          // Translate screen / presentation audio
-          client.setMicMuted(true);
-          await client.start(
-            {
-              mode: "token",
-              token: payload.token,
-              model: payload.model,
-              targetLanguage: language,
-            },
-            { displayStream: stream ?? null, useMicrophone: false },
-          );
-        } else {
-          // Meeting / participant audio mode
-          client.setMicMuted(true);
-          await client.start(
-            {
-              mode: "token",
-              token: payload.token,
-              model: payload.model,
-              targetLanguage: language,
-            },
-            { displayStream: stream ?? null, customStream: stream ?? null, useMicrophone: !stream },
-          );
-        }
+        await service.startSession(language, {
+          stream,
+          source,
+          speakerMuted,
+        });
       } catch (error) {
         if (cancelled) return;
-        clientRef.current = null;
+        serviceRef.current = null;
         setState((prev) => ({
           ...INITIAL_STATE,
           speakerMuted: prev.speakerMuted,
@@ -198,9 +159,9 @@ export function useLiveTranslation({
         window.clearTimeout(playingTimer.current);
         playingTimer.current = null;
       }
-      const client = clientRef.current;
-      clientRef.current = null;
-      void client?.stop("idle");
+      const service = serviceRef.current;
+      serviceRef.current = null;
+      void service?.stopSession();
     };
   }, [attempt, enabled, source, speakerMuted, stream, targetLanguageCode]);
 
