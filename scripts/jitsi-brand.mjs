@@ -50,7 +50,7 @@ const cache = new Map();
 
 const ASSET_EXT = /\.(js|mjs|css|map|png|jpg|jpeg|gif|svg|webp|ico|woff2?|ttf|mp3|wav|wasm|json|webmanifest)$/i;
 const MEDIA_PERMISSIONS_POLICY =
-  "camera=(self *), microphone=(self *), display-capture=(self *), fullscreen=(self *), autoplay=(self *), speaker-selection=(self *)";
+  "camera=(self *), microphone=(self *), display-capture=(self *), fullscreen=(self *), autoplay=(self *), speaker-selection=(self *), unload=(self *)";
 
 export function passesThrough(pathname) {
   return (
