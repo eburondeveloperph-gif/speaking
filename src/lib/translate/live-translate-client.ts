@@ -49,7 +49,7 @@ function websocketUrl(session: TranslateSessionPayload): string {
 function setupMessage(session: TranslateSessionPayload) {
   return {
     setup: {
-      model: `models/${session.model}`,
+      model: session.model.startsWith("models/") ? session.model : `models/${session.model}`,
       generationConfig: {
         responseModalities: ["AUDIO"],
         translationConfig: {
@@ -66,10 +66,10 @@ function setupMessage(session: TranslateSessionPayload) {
 function humanizeError(message: string): string {
   const lower = message.toLowerCase();
   if (lower.includes("notallowed") || lower.includes("permission")) {
-    return "Microphone or screen access is needed to translate.";
+    return "Microphone or screen audio permission is needed to translate.";
   }
   if (lower.includes("unknown name") || lower.includes("invalid json payload")) {
-    return "The translator rejected this session. Try starting again.";
+    return "The translation session was closed. Please try starting again.";
   }
   if (message.length > 180) {
     return `${message.slice(0, 177).trim()}…`;
@@ -90,9 +90,12 @@ export class LiveTranslateClient {
   private player: PcmPlayer | null = null;
   private captureContext: AudioContext | null = null;
   private mix: GainNode | null = null;
+  private captureNode: AudioNode | null = null;
   private mediaStream: MediaStream | null = null;
+  private ownsMediaStream = false;
   private displayStream: MediaStream | null = null;
   private displaySource: MediaStreamAudioSourceNode | null = null;
+  private micSource: MediaStreamAudioSourceNode | null = null;
   private hasDisplayAudio = false;
   private ready = false;
   private micMuted = false;
@@ -133,9 +136,13 @@ export class LiveTranslateClient {
     if (!stream || !this.captureContext || !this.mix) return;
     const liveAudio = stream.getAudioTracks().some((track) => track.readyState === "live");
     if (!liveAudio) return;
-    this.displaySource = this.captureContext.createMediaStreamSource(stream);
-    this.displaySource.connect(this.mix);
-    this.hasDisplayAudio = true;
+    try {
+      this.displaySource = this.captureContext.createMediaStreamSource(stream);
+      this.displaySource.connect(this.mix);
+      this.hasDisplayAudio = true;
+    } catch {
+      // AudioSource creation error fallback
+    }
   }
 
   private canSendAudio() {
@@ -143,58 +150,88 @@ export class LiveTranslateClient {
     return micLive || this.hasDisplayAudio;
   }
 
-  async start(session: TranslateSessionPayload, options?: { displayStream?: MediaStream | null }) {
+  async start(
+    session: TranslateSessionPayload,
+    options?: {
+      displayStream?: MediaStream | null;
+      customStream?: MediaStream | null;
+      useMicrophone?: boolean;
+    },
+  ) {
     this.closed = false;
     this.listeners.onStatus("connecting");
     this.listeners.onError("");
     if (options?.displayStream) this.displayStream = options.displayStream;
 
-    let stream: MediaStream | null = null;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          channelCount: 1,
-        },
-        video: false,
-      });
-    } catch (error) {
-      const displayHasAudio = this.displayStream
-        ?.getAudioTracks()
-        .some((track) => track.readyState === "live");
-      if (!displayHasAudio) throw error;
+    let stream: MediaStream | null = options?.customStream ?? null;
+    this.ownsMediaStream = false;
+
+    if (!stream && options?.useMicrophone !== false) {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            channelCount: 1,
+          },
+          video: false,
+        });
+        this.ownsMediaStream = true;
+      } catch (error) {
+        const displayHasAudio = this.displayStream
+          ?.getAudioTracks()
+          .some((track) => track.readyState === "live");
+        if (!displayHasAudio) throw error;
+      }
     }
 
     if (this.closed) {
-      stream?.getTracks().forEach((track) => track.stop());
+      if (this.ownsMediaStream) {
+        stream?.getTracks().forEach((track) => track.stop());
+      }
       return;
     }
 
     this.mediaStream = stream;
-    stream?.getAudioTracks().forEach((track) => {
-      track.enabled = !this.micMuted;
-    });
-
-    this.player = new PcmPlayer();
-    this.player.setMuted(this.speakerMuted);
-    await this.player.resume();
+    if (this.micMuted) {
+      stream?.getAudioTracks().forEach((track) => {
+        track.enabled = false;
+      });
+    }
 
     try {
-      const captureContext = new AudioContext();
+      this.player = new PcmPlayer();
+      this.player.setMuted(this.speakerMuted);
+      await this.player.resume();
+    } catch {
+      // Ignore player resume failures
+    }
+
+    try {
+      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const captureContext = new AudioCtx();
       this.captureContext = captureContext;
       await captureContext.resume();
       const mix = captureContext.createGain();
       this.mix = mix;
-      if (stream) {
-        const micSource = captureContext.createMediaStreamSource(stream);
-        micSource.connect(mix);
+
+      if (stream && stream.getAudioTracks().some((track) => track.readyState === "live")) {
+        try {
+          this.micSource = captureContext.createMediaStreamSource(stream);
+          this.micSource.connect(mix);
+        } catch {
+          // ignore
+        }
       }
+
       this.connectDisplay(this.displayStream);
+
       const capture = await createCaptureNode(captureContext, (frame) => {
         this.handleInputFrame(frame, captureContext.sampleRate);
       });
+      this.captureNode = capture;
+
       const silent = captureContext.createGain();
       silent.gain.value = 0;
       mix.connect(capture);
@@ -205,22 +242,26 @@ export class LiveTranslateClient {
         const socket = new WebSocket(websocketUrl(session));
         this.socket = socket;
         const timeout = window.setTimeout(() => {
-          reject(new Error("Timed out waiting for the translator."));
+          reject(new Error("Timed out waiting for the translator connection."));
         }, 15000);
+
         socket.onopen = () => {
           socket.send(JSON.stringify(setupMessage(session)));
           window.clearTimeout(timeout);
           resolve();
         };
+
         socket.onerror = () => {
           window.clearTimeout(timeout);
           reject(new Error("Could not reach the translation service."));
         };
+
         socket.onclose = (event) => {
           if (!this.closed && event.code !== 1000) {
             this.fail(humanizeError(event.reason || "Translation session closed."));
           }
         };
+
         socket.onmessage = (event) => {
           void this.handleSocketMessage(event);
         };
@@ -240,12 +281,18 @@ export class LiveTranslateClient {
       /* ignore */
     }
     this.socket = null;
-    this.mediaStream?.getTracks().forEach((track) => track.stop());
+    if (this.ownsMediaStream) {
+      this.mediaStream?.getTracks().forEach((track) => track.stop());
+    }
     this.mediaStream = null;
+    this.micSource?.disconnect();
+    this.micSource = null;
     this.displaySource?.disconnect();
     this.displaySource = null;
     this.hasDisplayAudio = false;
     this.mix = null;
+    this.captureNode?.disconnect();
+    this.captureNode = null;
     await this.captureContext?.close().catch(() => undefined);
     this.captureContext = null;
     await this.player?.close();

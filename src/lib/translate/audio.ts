@@ -68,7 +68,8 @@ export class PcmPlayer {
 
   constructor(sampleRate = RECEIVE_SAMPLE_RATE) {
     this.sampleRate = sampleRate;
-    this.context = new AudioContext({ sampleRate });
+    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    this.context = new AudioCtx({ sampleRate });
     this.gain = this.context.createGain();
     this.gain.gain.value = 1;
     this.gain.connect(this.context.destination);
@@ -85,21 +86,25 @@ export class PcmPlayer {
   }
 
   playBase64(base64: string) {
-    const pcm = base64ToArrayBuffer(base64);
-    const frames = Math.floor(pcm.byteLength / 2);
-    if (frames === 0) return;
-    const buffer = this.context.createBuffer(1, frames, this.sampleRate);
-    const channel = buffer.getChannelData(0);
-    const view = new DataView(pcm);
-    for (let i = 0; i < frames; i += 1) {
-      channel[i] = view.getInt16(i * 2, true) / 0x8000;
+    try {
+      const pcm = base64ToArrayBuffer(base64);
+      const frames = Math.floor(pcm.byteLength / 2);
+      if (frames === 0) return;
+      const buffer = this.context.createBuffer(1, frames, this.sampleRate);
+      const channel = buffer.getChannelData(0);
+      const view = new DataView(pcm);
+      for (let i = 0; i < frames; i += 1) {
+        channel[i] = view.getInt16(i * 2, true) / 0x8000;
+      }
+      const source = this.context.createBufferSource();
+      source.buffer = buffer;
+      source.connect(this.gain);
+      const startAt = Math.max(this.context.currentTime + 0.03, this.nextTime);
+      source.start(startAt);
+      this.nextTime = startAt + buffer.duration;
+    } catch {
+      // Ignore decoded audio play errors
     }
-    const source = this.context.createBufferSource();
-    source.buffer = buffer;
-    source.connect(this.gain);
-    const startAt = Math.max(this.context.currentTime, this.nextTime);
-    source.start(startAt);
-    this.nextTime = startAt + buffer.duration;
   }
 
   flush() {
@@ -128,19 +133,34 @@ registerProcessor("relay-capture", CaptureProcessor);
 export async function createCaptureNode(
   context: AudioContext,
   onFrame: (frame: Float32Array) => void,
-): Promise<AudioWorkletNode> {
-  const blob = new Blob([WORKLET_SOURCE], { type: "text/javascript" });
-  const url = URL.createObjectURL(blob);
-  try {
-    await context.audioWorklet.addModule(url);
-  } catch {
-    // Processor may already be registered on this origin.
-  } finally {
-    URL.revokeObjectURL(url);
+): Promise<AudioNode> {
+  if (context.audioWorklet) {
+    try {
+      const blob = new Blob([WORKLET_SOURCE], { type: "text/javascript" });
+      const url = URL.createObjectURL(blob);
+      try {
+        await context.audioWorklet.addModule(url);
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+      const node = new AudioWorkletNode(context, "relay-capture");
+      node.port.onmessage = (event: MessageEvent<Float32Array>) => {
+        onFrame(event.data);
+      };
+      return node;
+    } catch {
+      // Fall through to ScriptProcessor fallback below
+    }
   }
-  const node = new AudioWorkletNode(context, "relay-capture");
-  node.port.onmessage = (event: MessageEvent<Float32Array>) => {
-    onFrame(event.data);
+
+  // Fallback for browsers / environments where AudioWorklet is unavailable
+  const processor = context.createScriptProcessor(1024, 1, 1);
+  processor.onaudioprocess = (event) => {
+    const input = event.inputBuffer.getChannelData(0);
+    const copy = new Float32Array(input.length);
+    copy.set(input);
+    onFrame(copy);
+    event.outputBuffer.getChannelData(0).fill(0);
   };
-  return node;
+  return processor;
 }

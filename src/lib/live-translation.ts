@@ -6,11 +6,15 @@ import {
 
 export type TranslationStatus = "idle" | "connecting" | "listening" | "playing" | "error";
 
+export type TranslationSource = "meeting" | "microphone" | "screen";
+
 export type TranslationState = {
   status: TranslationStatus;
   sourceText: string;
   translatedText: string;
   error: string | null;
+  inputLevel: number;
+  speakerMuted: boolean;
 };
 
 const INITIAL_STATE: TranslationState = {
@@ -18,6 +22,8 @@ const INITIAL_STATE: TranslationState = {
   sourceText: "",
   translatedText: "",
   error: null,
+  inputLevel: 0,
+  speakerMuted: false,
 };
 
 function lastLineText(lines: TranscriptLine[], role: "source" | "translation"): string {
@@ -28,18 +34,21 @@ function lastLineText(lines: TranscriptLine[], role: "source" | "translation"): 
   return "";
 }
 
-/**
- * Live translation for the React meeting UI, driven by the same
- * LiveTranslateClient engine as the working reference app: ephemeral token
- * over the Constrained WebSocket endpoint, AudioWorklet capture, PCM
- * playback, and buffered transcripts.
- *
- * Meeting semantics: the incoming remote stream is the translation source
- * and the local microphone is always muted — your own voice is never
- * translated.
- */
-export function useLiveTranslation(stream: MediaStream | null, enabled: boolean, targetLanguageCode: string) {
+export function useLiveTranslation({
+  stream,
+  enabled,
+  targetLanguageCode,
+  source = "meeting",
+  speakerMuted = false,
+}: {
+  stream?: MediaStream | null;
+  enabled: boolean;
+  targetLanguageCode: string;
+  source?: TranslationSource;
+  speakerMuted?: boolean;
+}) {
   const [state, setState] = useState<TranslationState>(INITIAL_STATE);
+  const [transcripts, setTranscripts] = useState<TranscriptLine[]>([]);
   const [attempt, setAttempt] = useState(0);
   const clientRef = useRef<LiveTranslateClient | null>(null);
   const playingTimer = useRef<number | null>(null);
@@ -51,13 +60,26 @@ export function useLiveTranslation(stream: MediaStream | null, enabled: boolean,
     }
     void clientRef.current?.stop("idle");
     clientRef.current = null;
-    setState(INITIAL_STATE);
+    setState((prev) => ({ ...INITIAL_STATE, speakerMuted: prev.speakerMuted }));
     setAttempt((value) => value + 1);
   }, []);
 
+  const setSpeakerMuted = useCallback((muted: boolean) => {
+    setState((prev) => ({ ...prev, speakerMuted: muted }));
+    clientRef.current?.setSpeakerMuted(muted);
+  }, []);
+
+  const clearHistory = useCallback(() => {
+    setTranscripts([]);
+    setState((prev) => ({ ...prev, sourceText: "", translatedText: "" }));
+  }, []);
+
   useEffect(() => {
-    if (!enabled || !stream) return;
-    const sourceStream = stream;
+    if (!enabled) {
+      setState(INITIAL_STATE);
+      return;
+    }
+
     const language = targetLanguageCode;
     let cancelled = false;
 
@@ -73,7 +95,7 @@ export function useLiveTranslation(stream: MediaStream | null, enabled: boolean,
     }
 
     async function start() {
-      setState({ ...INITIAL_STATE, status: "connecting" });
+      setState((prev) => ({ ...INITIAL_STATE, speakerMuted: prev.speakerMuted, status: "connecting" }));
       try {
         const response = await fetch("/api/translate-token", {
           method: "POST",
@@ -105,9 +127,13 @@ export function useLiveTranslation(stream: MediaStream | null, enabled: boolean,
               error: message || "Translation connection failed.",
             }));
           },
-          onInputLevel: () => {},
+          onInputLevel: (level) => {
+            if (cancelled) return;
+            setState((current) => ({ ...current, inputLevel: level }));
+          },
           onTranscripts: (lines) => {
             if (cancelled) return;
+            setTranscripts(lines);
             const sourceText = lastLineText(lines, "source");
             const translatedText = lastLineText(lines, "translation");
             setState((current) => ({
@@ -118,30 +144,61 @@ export function useLiveTranslation(stream: MediaStream | null, enabled: boolean,
             if (translatedText) markPlaying();
           },
         });
+
         clientRef.current = client;
-        // Meeting rule: never translate the local microphone.
-        client.setMicMuted(true);
-        await client.start(
-          {
-            mode: "token",
-            token: payload.token,
-            model: payload.model,
-            targetLanguage: language,
-          },
-          { displayStream: sourceStream },
-        );
+        client.setSpeakerMuted(speakerMuted);
+
+        if (source === "microphone") {
+          // Translate user's microphone speech
+          client.setMicMuted(false);
+          await client.start(
+            {
+              mode: "token",
+              token: payload.token,
+              model: payload.model,
+              targetLanguage: language,
+            },
+            { useMicrophone: true, customStream: stream ?? null },
+          );
+        } else if (source === "screen") {
+          // Translate screen / presentation audio
+          client.setMicMuted(true);
+          await client.start(
+            {
+              mode: "token",
+              token: payload.token,
+              model: payload.model,
+              targetLanguage: language,
+            },
+            { displayStream: stream ?? null, useMicrophone: false },
+          );
+        } else {
+          // Meeting / participant audio mode
+          client.setMicMuted(true);
+          await client.start(
+            {
+              mode: "token",
+              token: payload.token,
+              model: payload.model,
+              targetLanguage: language,
+            },
+            { displayStream: stream ?? null, customStream: stream ?? null, useMicrophone: !stream },
+          );
+        }
       } catch (error) {
         if (cancelled) return;
         clientRef.current = null;
-        setState({
+        setState((prev) => ({
           ...INITIAL_STATE,
+          speakerMuted: prev.speakerMuted,
           status: "error",
           error: error instanceof Error ? error.message : "Translation could not start.",
-        });
+        }));
       }
     }
 
     void start();
+
     return () => {
       cancelled = true;
       if (playingTimer.current !== null) {
@@ -152,7 +209,13 @@ export function useLiveTranslation(stream: MediaStream | null, enabled: boolean,
       clientRef.current = null;
       void client?.stop("idle");
     };
-  }, [attempt, enabled, stream, targetLanguageCode]);
+  }, [attempt, enabled, source, speakerMuted, stream, targetLanguageCode]);
 
-  return { state, restart };
+  return {
+    state,
+    transcripts,
+    restart,
+    setSpeakerMuted,
+    clearHistory,
+  };
 }

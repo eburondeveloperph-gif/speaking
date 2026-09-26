@@ -5,7 +5,9 @@ import {
   ChartNoAxesColumn,
   Ellipsis,
   Hand,
+  Heart,
   Keyboard,
+  Languages,
   LayoutGrid,
   Lock,
   MessageSquare,
@@ -83,6 +85,7 @@ export function Room({ room, media }: { room: string; media: LocalMedia }) {
   const muteAll = useMeeting((state) => state.muteAll);
   const leave = useMeeting((state) => state.leave);
   const pushChat = useMeeting((state) => state.pushChat);
+  const translatorRunning = useMeeting((state) => state.translatorRunning);
 
   const [now, setNow] = useState(() => Date.now());
   const [shareStream, setShareStream] = useState<MediaStream | null>(null);
@@ -138,6 +141,7 @@ export function Room({ room, media }: { room: string; media: LocalMedia }) {
       const map: Record<string, () => void> = {
         m: toggleAudio,
         v: toggleVideo,
+        e: () => togglePanel("translator"),
         c: () => togglePanel("chat"),
         p: () => togglePanel("people"),
         r: toggleHand,
@@ -246,7 +250,7 @@ export function Room({ room, media }: { room: string; media: LocalMedia }) {
             mirror={mirror}
           />
         </div>
-        <SidePanel now={now} />
+        <SidePanel now={now} stream={media.stream} room={room} />
       </div>
 
       <div className="dock flex shrink-0 items-center justify-center gap-2 px-3 pt-1">
@@ -302,6 +306,14 @@ export function Room({ room, media }: { room: string; media: LocalMedia }) {
             </Popover.Portal>
           </Popover.Root>
 
+          <ToolButton
+            label={translatorRunning ? "Stop Translator" : "Start Translator"}
+            pressed={panel === "translator" || translatorRunning}
+            onClick={() => togglePanel("translator")}
+          >
+            <Languages className="size-5" />
+          </ToolButton>
+
           <ToolButton label="Chat" pressed={panel === "chat"} onClick={() => togglePanel("chat")}>
             <MessageSquare className="size-5" />
             {unread > 0 && (
@@ -334,9 +346,15 @@ export function Room({ room, media }: { room: string; media: LocalMedia }) {
                 sideOffset={12}
                 className="z-40 w-56 rounded-lg border border-line bg-elevated p-1 shadow-panel"
               >
+                <MenuItem
+                  icon={Languages}
+                  label={translatorRunning ? "Stop Translator" : "Start Translator"}
+                  onClick={() => togglePanel("translator")}
+                />
                 <MenuItem icon={Settings} label="Settings" onClick={() => togglePanel("settings")} />
                 <MenuItem icon={Keyboard} label="Shortcuts" onClick={() => togglePanel("shortcuts")} />
                 <MenuItem icon={ChartNoAxesColumn} label="Stats" onClick={() => togglePanel("stats")} />
+                <MenuItem icon={Heart} label="Support Orbit" onClick={() => togglePanel("donate")} />
                 <MenuItem
                   icon={Lock}
                   label={locked ? "Unlock room" : "Lock room"}

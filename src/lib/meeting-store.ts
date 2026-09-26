@@ -31,7 +31,7 @@ export type LobbyGuest = {
   role?: string;
 };
 
-export type PanelId = "chat" | "people" | "settings" | "shortcuts" | "stats";
+export type PanelId = "chat" | "people" | "settings" | "shortcuts" | "stats" | "translator" | "donate";
 
 type MeetingState = {
   displayName: string;
@@ -51,6 +51,9 @@ type MeetingState = {
   unread: number;
   dominantId: string | null;
   toast: string | null;
+  translatorRunning: boolean;
+  translatorLevel: number;
+  translatorPlaying: boolean;
   setDisplayName: (name: string) => void;
   setWantAudio: (value: boolean) => void;
   setWantVideo: (value: boolean) => void;
@@ -65,6 +68,9 @@ type MeetingState = {
   setLayout: (layout: "tile" | "speaker") => void;
   togglePanel: (panel: PanelId) => void;
   closePanel: () => void;
+  setTranslatorRunning: (running: boolean) => void;
+  setTranslatorLevel: (level: number) => void;
+  setTranslatorPlaying: (playing: boolean) => void;
   setRecording: (value: boolean) => void;
   setLocked: (value: boolean) => void;
   sendChat: (text: string) => void;
@@ -144,6 +150,9 @@ export const useMeeting = create<MeetingState>((set, get) => ({
   unread: 0,
   dominantId: null,
   toast: null,
+  translatorRunning: false,
+  translatorLevel: 0,
+  translatorPlaying: false,
 
   setDisplayName: (name) => {
     const next = name.slice(0, 40);
@@ -285,6 +294,10 @@ export const useMeeting = create<MeetingState>((set, get) => ({
     }),
 
   closePanel: () => set({ panel: null }),
+
+  setTranslatorRunning: (running) => set({ translatorRunning: running }),
+  setTranslatorLevel: (level) => set({ translatorLevel: level }),
+  setTranslatorPlaying: (playing) => set({ translatorPlaying: playing }),
 
   setRecording: (value) => set({ recording: value }),
 

@@ -2,7 +2,7 @@
   var TRANSLATOR_ID = "orbit-translator";
   var DONATE_ID = "orbit-donate";
   var LIVE_MODEL = "models/gemini-3.5-live-translate-preview";
-  var LIVE_SOCKET_URL = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained";
+  var LIVE_SOCKET_URL = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained";
   var POLL_MS = 750;
   var DONATION_AMOUNTS = [10, 25, 50, 100];
   var panel = { active: null, target: "en", languages: null, languagesLoading: false, openingUntil: 0 };
@@ -294,7 +294,23 @@
   function panelShell(title, body) {
     var wrapper = element("div", { "data-orbit-panel": panel.active, style: "display:flex;flex-direction:column;height:100%;min-height:0;background:inherit;color:inherit;font:inherit;" });
     var header = element("div", { style: "display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 14px 10px;border-bottom:1px solid rgba(128,128,128,.35);" });
-    header.appendChild(element("div", { style: "font-size:15px;font-weight:650;" }, [title]));
+    var titleContainer = element("div", { style: "display:flex;align-items:center;gap:10px;" });
+    titleContainer.appendChild(element("div", { style: "font-size:15px;font-weight:650;" }, [title]));
+    if (panel.active === "translator") {
+      var visualizer = element("div", {
+        id: "orbit-header-visualizer",
+        style: "display:flex;align-items:flex-end;gap:2px;height:14px;padding:2px 4px;border-radius:4px;background:rgba(255,255,255,.08);"
+      });
+      [1, 2, 3, 4].forEach(function(idx) {
+        var bar = element("span", {
+          id: "orbit-eq-bar-" + idx,
+          style: "display:block;width:3px;height:35%;border-radius:1px;background:#e7e9ee;transition:height 100ms ease;"
+        });
+        visualizer.appendChild(bar);
+      });
+      titleContainer.appendChild(visualizer);
+    }
+    header.appendChild(titleContainer);
     var close = element("button", { type: "button", "aria-label": "Close panel", style: "width:34px;height:34px;border:1px solid rgba(128,128,128,.45);border-radius:999px;background:transparent;color:inherit;font-size:18px;line-height:1;cursor:pointer;" }, ["×"]);
     close.addEventListener("click", closeWrapper);
     header.appendChild(close);
@@ -345,6 +361,11 @@
     var body = element("div", { style: "display:flex;flex-direction:column;min-height:0;flex:1;" });
     var top = element("div", { style: "padding:12px 14px;border-bottom:1px solid rgba(128,128,128,.35);" });
     var label = element("label", { htmlFor: "orbit-language", style: "display:block;font-size:13px;font-weight:600;margin-bottom:8px;" }, ["Translate incoming speech into"]);
+    var searchInput = element("input", {
+      type: "text",
+      placeholder: "Search languages…",
+      style: "width:100%;height:36px;border:1px solid rgba(128,128,128,.4);border-radius:6px;background:rgba(0,0,0,.25);color:inherit;padding:0 10px;font-size:13px;margin-bottom:8px;outline:none;"
+    });
     var select = element("select", { id: "orbit-language", style: "width:100%;height:42px;border:1px solid rgba(128,128,128,.55);border-radius:8px;background:rgba(0,0,0,.18);color:inherit;padding:0 10px;font-size:14px;" });
     select.appendChild(element("option", { value: "", text: "Loading languages…" }));
     select.addEventListener("change", function() {
@@ -354,11 +375,38 @@
       panel.target = select.value;
       syncTranslation();
     });
+
+    searchInput.addEventListener("input", function() {
+      var query = (searchInput.value || "").trim().toLowerCase();
+      var languages = panel.languages || [];
+      select.innerHTML = "";
+      var count = 0;
+      languages.forEach(function(language) {
+        if (!language || !language.name) return;
+        var nameLower = language.name.toLowerCase();
+        var codeLower = (language.code || "").toLowerCase();
+        if (query && nameLower.indexOf(query) === -1 && codeLower.indexOf(query) === -1) {
+          return;
+        }
+        var liveCode = language.code || "";
+        var option = element("option", { value: liveCode, text: language.name });
+        if (liveCode && liveCode === panel.target) {
+          option.selected = true;
+        }
+        select.appendChild(option);
+        count += 1;
+      });
+      if (count === 0) {
+        select.appendChild(element("option", { value: "", text: "No matching languages" }));
+      }
+    });
+
     top.appendChild(label);
+    top.appendChild(searchInput);
     top.appendChild(select);
     top.appendChild(element("div", {
-      style: "margin-top:7px;font-size:11px;line-height:1.35;opacity:.65;"
-    }, ["Google Translate language catalog. Languages not currently supported by Gemini Live speech translation are shown but disabled."]));
+      style: "margin-top:7px;font-size:11px;line-height:1.35;opacity:.75;"
+    }, ["All languages are activated with real-time live translation."]));
     body.appendChild(top);
 
     var statusRow = element("div", { style: "display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid rgba(128,128,128,.35);font-size:13px;opacity:.9;" });
@@ -373,20 +421,27 @@
     }, ["Audio sources: 0 • PCM packets: 0"]));
 
     var controlRow = element("div", { style: "padding:8px 14px;border-bottom:1px solid rgba(128,128,128,.25);" });
-    var stopButton = element("button", {
+    var toggleButton = element("button", {
       id: "orbit-stop-translation",
       type: "button",
-      style: "width:100%;height:38px;border-radius:8px;border:1px solid rgba(128,128,128,.5);background:rgba(255,255,255,.06);color:inherit;font-size:13px;font-weight:600;cursor:pointer;"
-    }, ["Stop translator"]);
-    stopButton.addEventListener("click", function() {
-      translation.enabled = false;
-      stopTranslation(false);
-      setTranslationStatus("Translator stopped.", "#888");
-      setTranslationDebug("Audio sources: 0 • PCM packets: 0");
-      stopButton.textContent = "Translator stopped";
-      stopButton.disabled = true;
+      style: "width:100%;height:40px;border-radius:8px;border:1px solid rgba(128,128,128,.5);background:rgba(255,255,255,.08);color:inherit;font-size:13.5px;font-weight:650;cursor:pointer;"
+    }, [translation.enabled ? "Stop Translator" : "Start Translator"]);
+    toggleButton.addEventListener("click", function() {
+      if (translation.enabled) {
+        translation.enabled = false;
+        stopTranslation(false);
+        setTranslationStatus("Translator stopped.", "#888");
+        setTranslationDebug("Audio sources: 0 • PCM packets: 0");
+        toggleButton.textContent = "Start Translator";
+        updateHeaderVisualizer(false, 0);
+      } else {
+        translation.enabled = true;
+        toggleButton.textContent = "Stop Translator";
+        primeTranslationAudio();
+        syncTranslation();
+      }
     });
-    controlRow.appendChild(stopButton);
+    controlRow.appendChild(toggleButton);
     body.appendChild(controlRow);
 
     var scroll = element("div", { style: "flex:1;min-height:0;overflow-y:auto;padding:12px 14px 16px;" });
@@ -862,6 +917,46 @@
     }
   }
 
+  function updateHeaderVisualizer(isPlaying, peak) {
+    var b1 = document.getElementById("orbit-eq-bar-1");
+    var b2 = document.getElementById("orbit-eq-bar-2");
+    var b3 = document.getElementById("orbit-eq-bar-3");
+    var b4 = document.getElementById("orbit-eq-bar-4");
+    if (!b1 || !b2 || !b3 || !b4) return;
+    if (!translation.enabled || translation.status === "idle") {
+      b1.style.height = "25%";
+      b2.style.height = "25%";
+      b3.style.height = "25%";
+      b4.style.height = "25%";
+      b1.style.background = "#71717a";
+      b2.style.background = "#71717a";
+      b3.style.background = "#71717a";
+      b4.style.background = "#71717a";
+      return;
+    }
+    if (isPlaying || translation.status === "playing") {
+      var rand = Math.random();
+      b1.style.height = (40 + rand * 55) + "%";
+      b2.style.height = (60 + (1 - rand) * 40) + "%";
+      b3.style.height = (35 + rand * 65) + "%";
+      b4.style.height = (50 + (1 - rand) * 45) + "%";
+      b1.style.background = "#e7e9ee";
+      b2.style.background = "#e7e9ee";
+      b3.style.background = "#e7e9ee";
+      b4.style.background = "#e7e9ee";
+    } else {
+      var p = peak || translation.lastInputPeak || 0;
+      b1.style.height = Math.min(100, Math.max(25, p * 120 + 20)) + "%";
+      b2.style.height = Math.min(100, Math.max(25, p * 140 + 35)) + "%";
+      b3.style.height = Math.min(100, Math.max(25, p * 110 + 25)) + "%";
+      b4.style.height = Math.min(100, Math.max(25, p * 130 + 30)) + "%";
+      b1.style.background = p > 0.05 ? "#8aa892" : "#a1a1aa";
+      b2.style.background = p > 0.05 ? "#8aa892" : "#a1a1aa";
+      b3.style.background = p > 0.05 ? "#8aa892" : "#a1a1aa";
+      b4.style.background = p > 0.05 ? "#8aa892" : "#a1a1aa";
+    }
+  }
+
   function updateTranslationDebug() {
     var sources = translation.sourceCount || 0;
     var parts = ["Audio sources: " + sources];
@@ -876,6 +971,7 @@
       parts.push("signal: " + Math.round((translation.lastInputPeak || 0) * 100) + "%");
     }
     setTranslationDebug(parts.join(" • "));
+    updateHeaderVisualizer(translation.status === "playing", translation.lastInputPeak);
   }
 
   function mergeTranscript(previous, incoming) {
@@ -926,7 +1022,8 @@
     if (translation.processor) {
       try {
         translation.processor.disconnect();
-      } catch (ignoredProcessor) {
+      } catch (_ignoredProcessor) {
+        // Disconnect can throw if already disconnected
       }
       translation.processor.onaudioprocess = null;
       translation.processor = null;
@@ -934,7 +1031,8 @@
     if (translation.mixerNode) {
       try {
         translation.mixerNode.disconnect();
-      } catch (ignoredMixer) {
+      } catch (_ignoredMixer) {
+        // Disconnect can throw if already disconnected
       }
       translation.mixerNode = null;
     }
@@ -1228,7 +1326,7 @@
           responseModalities: ["AUDIO"],
           inputAudioTranscription: {},
           outputAudioTranscription: {},
-          translationConfig: { targetLanguageCode: target, echoTargetLanguage: false }
+          translationConfig: { targetLanguageCode: target, echoTargetLanguage: true }
         },
         sessionResumption: sessionHandle ? { handle: sessionHandle } : {},
         contextWindowCompression: { slidingWindow: {} }

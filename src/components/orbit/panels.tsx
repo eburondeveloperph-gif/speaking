@@ -4,10 +4,12 @@ import { X } from "lucide-react";
 import { roomLabel } from "@/lib/rooms";
 import { useMeeting } from "@/lib/meeting-store";
 import { Button } from "@/components/ui/button";
+import { TranslatorPanel, DonatePanel, TranslatorAudioVisualizer } from "@/components/orbit/utility-panels";
 
 const SHORTCUTS = [
   ["M", "Mute or unmute"],
   ["V", "Camera on or off"],
+  ["E", "Open translator"],
   ["C", "Open chat"],
   ["P", "Open participants"],
   ["R", "Raise or lower hand"],
@@ -32,9 +34,12 @@ function formatElapsed(startedAt: number | null, now: number) {
   return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
-export function SidePanel({ now }: { now: number }) {
+export function SidePanel({ now, stream, room }: { now: number; stream?: MediaStream | null; room?: string }) {
   const panel = useMeeting((state) => state.panel);
   const closePanel = useMeeting((state) => state.closePanel);
+  const translatorRunning = useMeeting((state) => state.translatorRunning);
+  const translatorPlaying = useMeeting((state) => state.translatorPlaying);
+  const translatorLevel = useMeeting((state) => state.translatorLevel);
   if (!panel) return null;
 
   const title =
@@ -42,16 +47,29 @@ export function SidePanel({ now }: { now: number }) {
       ? "Chat"
       : panel === "people"
         ? "Participants"
-        : panel === "settings"
-          ? "Settings"
-          : panel === "shortcuts"
-            ? "Shortcuts"
-            : "Stats";
+        : panel === "translator"
+          ? "Translator"
+          : panel === "donate"
+            ? "Support Orbit"
+            : panel === "settings"
+              ? "Settings"
+              : panel === "shortcuts"
+                ? "Shortcuts"
+                : "Stats";
 
   return (
     <aside className="panel-in absolute inset-0 z-20 flex min-h-0 flex-col bg-elevated sm:static sm:w-96 sm:border-l sm:border-line">
       <header className="flex h-14 shrink-0 items-center justify-between border-b border-line px-4">
-        <h2 className="text-base font-medium">{title}</h2>
+        <div className="flex min-w-0 items-center gap-2.5">
+          <h2 className="text-base font-medium">{title}</h2>
+          {panel === "translator" && (
+            <TranslatorAudioVisualizer
+              running={translatorRunning}
+              playing={translatorPlaying}
+              level={translatorLevel}
+            />
+          )}
+        </div>
         <Button size="icon" variant="ghost" aria-label="Close panel" onClick={closePanel}>
           <X className="size-4" />
         </Button>
@@ -59,6 +77,8 @@ export function SidePanel({ now }: { now: number }) {
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {panel === "chat" && <ChatPanel />}
         {panel === "people" && <PeoplePanel />}
+        {panel === "translator" && <TranslatorPanel active={panel === "translator"} incomingStream={stream ?? null} />}
+        {panel === "donate" && <DonatePanel returnPath={room ? `/meet/${room}` : "/"} />}
         {panel === "settings" && <SettingsPanel />}
         {panel === "shortcuts" && <ShortcutsPanel />}
         {panel === "stats" && <StatsPanel now={now} />}
